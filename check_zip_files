@@ -23,21 +23,15 @@ function Check-ZipFiles {
         elseif ($item.Extension -ieq '.zip') {
             # If the item is a zip file, process it
 
-            # Check if this zip file contains .asc, .paf, or .cdi files
-            $containsASC = $false
-            $containsCADSTAR = $false
+            # Check if this zip file contains the specified extension
+            $containsTarget = $false
 
             try {
                 $zip = [System.IO.Compression.ZipFile]::OpenRead($item.FullName)
 
                 foreach ($entry in $zip.Entries) {
-					# Change for desired file extensions
-                    if ($entry.FullName -match '\.asc$') {
-                        $containsASC = $true
-                    }
-					# Change for desired file extensions
-                    if ($entry.FullName -match '\.paf$|\.cdi$|\.scm$|\.col$|\.sel$') {
-                        $containsCADSTAR = $true
+                    if ($entry.FullName -match '\.paf$|\.cdi$|\.scm$|\.col$|\.sel$|\.asc$') {
+                        $containsTarget = $true
                     }
                 }
 
@@ -45,18 +39,14 @@ function Check-ZipFiles {
 
                 # If either extension is found, record the result tied to the parent zip file
                 $actualParentZip = if ($parentZipName -ne "") { $parentZipName } else { $item.Name }
-                if ($containsASC -or $containsCADSTAR) {
+                if ($containsTarget) {
                     if (-not $zipResults.ContainsKey($actualParentZip)) {
                         $zipResults[$actualParentZip] = @{
                             Extensions = @()
                         }
                     }
-
-                    if ($containsASC -and -not $zipResults[$actualParentZip].Extensions.Contains(".asc")) {
-                        $zipResults[$actualParentZip].Extensions += ".asc"
-                    }
-                    if ($containsCADSTAR -and -not $zipResults[$actualParentZip].Extensions.Contains("cadstar")) {
-                        $zipResults[$actualParentZip].Extensions += "cadstar"
+                    if ($containsTarget -and -not $zipResults[$actualParentZip].Extensions.Contains("Target")) {
+                        $zipResults[$actualParentZip].Extensions += "Target"
                     }
                 }
             }
@@ -91,8 +81,9 @@ foreach ($result in $sortedResults) {
     $parentZip = $result.Key
     $extensions = $result.Value.Extensions -join ", "
     if ($extensions) {
-        Write-Host "$parentZip is $extensions"
+        Write-Host "$parentZip"
     }
 }
 
 Write-Host "Finished checking zip files."
+
