@@ -1,0 +1,98 @@
+# Set the root directory containing your zip files
+$rootDir = "PATH/TO/ZIPS"
+
+# Hashtable to store results keyed by the parent zip file name
+$zipResults = @{}
+
+# Function to recursively check zip files and directories
+function Check-ZipFiles {
+    param (
+        [Parameter(Mandatory=$true)]
+        [string]$directory,
+        [string]$parentZipName = ""
+    )
+
+    # Get all files and directories in the current directory
+    $items = Get-ChildItem -Path $directory
+
+    foreach ($item in $items) {
+        if ($item.PSIsContainer) {
+            # If the item is a directory, recurse into it
+            Check-ZipFiles -directory $item.FullName -parentZipName $parentZipName
+        }
+        elseif ($item.Extension -ieq '.zip') {
+            # If the item is a zip file, process it
+
+            # Check if this zip file contains .asc, .paf, or .cdi files
+            $containsASC = $false
+            $containsCADSTAR = $false
+
+            try {
+                $zip = [System.IO.Compression.ZipFile]::OpenRead($item.FullName)
+
+                foreach ($entry in $zip.Entries) {
+					# Change for desired file extensions
+                    if ($entry.FullName -match '\.asc$') {
+                        $containsASC = $true
+                    }
+					# Change for desired file extensions
+                    if ($entry.FullName -match '\.paf$|\.cdi$|\.scm$|\.col$|\.sel$') {
+                        $containsCADSTAR = $true
+                    }
+                }
+
+                $zip.Dispose()
+
+                # If either extension is found, record the result tied to the parent zip file
+                $actualParentZip = if ($parentZipName -ne "") { $parentZipName } else { $item.Name }
+                if ($containsASC -or $containsCADSTAR) {
+                    if (-not $zipResults.ContainsKey($actualParentZip)) {
+                        $zipResults[$actualParentZip] = @{
+                            Extensions = @()
+                        }
+                    }
+
+                    if ($containsASC -and -not $zipResults[$actualParentZip].Extensions.Contains(".asc")) {
+                        $zipResults[$actualParentZip].Extensions += ".asc"
+                    }
+                    if ($containsCADSTAR -and -not $zipResults[$actualParentZip].Extensions.Contains("cadstar")) {
+                        $zipResults[$actualParentZip].Extensions += "cadstar"
+                    }
+                }
+            }
+            catch {
+                Write-Host "Error processing $($item.Name): $_"
+            }
+
+            # Extract the zip file to a temporary directory
+            $tempDir = Join-Path $directory ($item.BaseName + "_temp")
+            Expand-Archive -Path $item.FullName -DestinationPath $tempDir -Force
+
+            # Recursively check the extracted contents
+            if (Test-Path $tempDir -PathType Container) {
+                Check-ZipFiles -directory $tempDir -parentZipName $actualParentZip
+            }
+
+            # Clean up the temporary directory
+            Remove-Item -Path $tempDir -Recurse -Force
+        }
+    }
+}
+
+# Start checking from the root directory
+Check-ZipFiles -directory $rootDir
+
+# Output and sort results
+$sortedResults = $zipResults.GetEnumerator() | Sort-Object {
+    if ($_ -match '108-(\d{5})\.\w\.zip$') { [int]$matches[1] } else { 0 }
+} -Descending
+
+foreach ($result in $sortedResults) {
+    $parentZip = $result.Key
+    $extensions = $result.Value.Extensions -join ", "
+    if ($extensions) {
+        Write-Host "$parentZip is $extensions"
+    }
+}
+
+Write-Host "Finished checking zip files."
